@@ -1,0 +1,15 @@
+@WebApplication1_HostAddress = http://localhost:5032
+
+###
+# Verarbeitung starten
+POST {{WebApplication1_HostAddress}}/api/processing/start
+Content-Type: application/json
+Accept: application/json
+
+###
+
+# Verarbeitungsstatus abrufen
+GET {{WebApplication1_HostAddress}}/api/processing/status
+Accept: application/json
+
+###
