@@ -36,19 +36,6 @@ namespace MiraculousYouTubeMerger.Services
       _languageService = languageService;
       _generalOptions = generalOptions.Value;
       _processingOptions = processingOptions.Value;
-
-      // Ensure target and source directories exist or create them
-      if (!Directory.Exists(_generalOptions.BasePathSource))
-      {
-        Directory.CreateDirectory(_generalOptions.BasePathSource);
-        _logger.LogInformation("Created source directory: {Path}", Path.GetFullPath(_generalOptions.BasePathSource));
-      }
-
-      if (!Directory.Exists(_generalOptions.BasePathTarget))
-      {
-        Directory.CreateDirectory(_generalOptions.BasePathTarget);
-        _logger.LogInformation("Created target directory: {Path}", Path.GetFullPath(_generalOptions.BasePathTarget));
-      }
     }
 
     public async Task<bool> StartProcessingAsync()
@@ -65,8 +52,23 @@ namespace MiraculousYouTubeMerger.Services
         Status = ProcessingStatus.Processing;
         LastMessage = "Processing started...";
         _logger.LogInformation("Starting video processing task...");
-
-        await ProcessVideosInternal();
+        foreach (var task in _generalOptions.Tasks)
+        {
+          // Wenn die Quelle nicht existiert können wir die Verarbeitung überspringen
+          if (!Directory.Exists(task.SourcePath))
+          {
+            _logger.LogWarning($"Task {task.SourcePath} does not exist. Skipping processing for this task.");
+            LastMessage = $"Task {task.SourcePath} does not exist. Skipping processing for this task.";
+            continue;
+          }
+          // Wenn das Zielverzeichnis nicht existiert, erstellen wir es
+          if (!Directory.Exists(task.TargetPath))
+          {
+            _logger.LogInformation($"Target directory {task.TargetPath} does not exist. Creating it.");
+            Directory.CreateDirectory(task.TargetPath);
+          }
+          await ProcessVideosInternal(task);
+        }
 
         Status = ProcessingStatus.Completed;
         LastMessage = "Processing completed successfully.";
@@ -88,9 +90,9 @@ namespace MiraculousYouTubeMerger.Services
       }
     }
 
-    private async Task ProcessVideosInternal()
+    private async Task ProcessVideosInternal(ShowTask task)
     {
-      var episodes = GetEpisodes();
+      var episodes = GetEpisodes(task);
       _logger.LogInformation("Found {Count} unique episode(s) to process.", episodes.Count);
 
       if (episodes.Count == 0)
@@ -113,7 +115,7 @@ namespace MiraculousYouTubeMerger.Services
         _logger.LogInformation("[{progress}/{count}] Processing {Title} (Season {Season}, Episode {EpisodeNumber})...",
           progress, orderedEpisodes.Count, episodeKey.Title, episodeKey.Season, episodeKey.EpisodeNumber);
 
-        var targetDir = Path.Combine(_generalOptions.BasePathTarget, $"Staffel {episodeKey.Season}");
+        var targetDir = Path.Combine(task.TargetPath, $"Staffel {episodeKey.Season}");
         var targetFile = Path.Combine(targetDir,
           $"S{episodeKey.Season:D2}E{episodeKey.EpisodeNumber:D2} - {episodeKey.Title}.mkv");
 
@@ -210,14 +212,14 @@ namespace MiraculousYouTubeMerger.Services
       return null;
     }
 
-    private Dictionary<EpisodeInfo, List<Episode>> GetEpisodes()
+    private Dictionary<EpisodeInfo, List<Episode>> GetEpisodes(ShowTask task)
     {
-      DirectoryInfo directory = new(_generalOptions.BasePathSource);
+      DirectoryInfo directory = new(task.SourcePath);
       var episodes = new Dictionary<EpisodeInfo, List<Episode>>();
 
       if (!directory.Exists)
       {
-        _logger.LogWarning("Source directory does not exist: {SourcePath}", _generalOptions.BasePathSource);
+        _logger.LogWarning("Source directory does not exist: {SourcePath}", task.SourcePath);
         return episodes; // Return empty if source doesn't exist
       }
 

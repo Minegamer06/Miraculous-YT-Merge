@@ -15,6 +15,7 @@ builder.Services.Configure<GeneralOptions>(builder.Configuration.GetSection("Gen
 // Register your video processing service as a Singleton
 builder.Services.AddSingleton<LanguageService>();
 builder.Services.AddSingleton<VideoProcessingService>();
+builder.Services.AddHostedService<VideoProcessingBackgroundService>();
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

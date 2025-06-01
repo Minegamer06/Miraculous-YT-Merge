@@ -1,12 +1,12 @@
 using System.Globalization;
 using System.Text.Json.Serialization;
+using MiraculousYouTubeMerger.Models;
 
 namespace MiraculousYouTubeMerger;
 
 public class GeneralOptions
 {
-  public string BasePathSource { get; set; } = "./Source";
-  public string BasePathTarget { get; set; } = "./Destination";
+  public ShowTask[] Tasks { get; set; }
   public string Language { get; set; } = "eng"; // Default language
   public TimeSpan ProcessingInterval { get; set; } = TimeSpan.FromHours(12);
 
