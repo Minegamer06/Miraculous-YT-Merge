@@ -1,7 +1,9 @@
 ﻿services:
-  webapplication1:
-    image: webapplication1
+  miraculous-yt-merger:
+    image: miraculous-yt-merger
     build:
       context: .
-      dockerfile: WebApplication1/Dockerfile
-
+      dockerfile: MiraculousYouTubeMerger/Dockerfile
+    environment:
+      GENERAL__LANGUAGE: "deu"
+      GENERAL__TMDBAPIKEY: "your_api_key_here"
