@@ -15,7 +15,7 @@ public class LanguageService
     _generalOptions = generalOptions.Value;
   }
 
-  public CultureInfo? GetLanguageFromText(string name)
+  public CultureInfo? GetLanguageFromText(string name, bool secure = true)
   {
     _logger.LogTrace("Searching for language in name: {Name}", name); // Changed to Trace
     if (_cachedCultures is null || _cachedCultures.Length == 0)
@@ -23,7 +23,7 @@ public class LanguageService
       _cachedCultures = CultureInfo.GetCultures(CultureTypes.AllCultures);
       _logger.LogDebug("Cached cultures initialized with {Count} cultures", _cachedCultures.Length);
     }
-    
+
     var lang = _cachedCultures.FirstOrDefault(culture =>
       culture.ThreeLetterISOLanguageName.Equals(name, StringComparison.OrdinalIgnoreCase) ||
       culture.TwoLetterISOLanguageName.Equals(name, StringComparison.OrdinalIgnoreCase) ||
@@ -32,8 +32,8 @@ public class LanguageService
       culture.NativeName.Equals(name, StringComparison.OrdinalIgnoreCase));
     if (lang is not null) return lang;
 
-    foreach (var word in name.Split([' ', '.', '-', '_'],
-               StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    var languageStrings = ExtractLanguageStrings(name, secure);
+    foreach (var word in languageStrings)
     {
       lang = _cachedCultures.FirstOrDefault(culture =>
         culture.ThreeLetterISOLanguageName.Equals(word, StringComparison.OrdinalIgnoreCase) ||
@@ -48,6 +48,41 @@ public class LanguageService
     return null;
   }
 
+  private List<string> ExtractLanguageStrings(string name, bool secure = true)
+  {
+    List<string> results = [];
+    string pattern = @"(?<=\()[^)]*(?=\))|(?<=\[)[^\]]*(?=\])";
+    var matches = System.Text.RegularExpressions.Regex.Matches(name, pattern);
+    foreach (var match in matches.Where(match => match.Success))
+    {
+      if (!results.Contains(match.Value.Trim()))
+        results.Add(match.Value.Trim());
+    }
+
+    var ext = name.Split('.');
+    for (int i = ext.Length - 1; i >= 0; i--)
+    {
+      var extName = ext[i].Trim();
+      if (extName.Length == 2 || extName.Length == 3)
+      {
+        if (!results.Contains(extName))
+          results.Add(extName);
+      }
+      else if (extName.Length > 3)
+        break;
+    }
+
+    foreach (var word in name.Split([' ', '.', '-', '_'],
+               StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+      if (secure && word.Length < 4) continue; // Skip short words if secure
+      if (results.Contains(word)) continue;
+      results.Add(word);
+    }
+
+    return results;
+  }
+
   public string GetDisplayName(CultureInfo culture)
   {
     var currentCulture = CultureInfo.CurrentUICulture;
@@ -59,7 +94,7 @@ public class LanguageService
     finally
     {
       CultureInfo.CurrentUICulture = currentCulture;
-      _logger.LogTrace("Restored CurrentUICulture to: {Culture}", currentCulture.Name); 
+      _logger.LogTrace("Restored CurrentUICulture to: {Culture}", currentCulture.Name);
     }
   }
 }

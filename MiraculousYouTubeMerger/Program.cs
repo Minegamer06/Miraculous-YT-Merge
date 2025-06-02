@@ -10,10 +10,10 @@ builder.Services.AddSwaggerGen();
 builder.Configuration
   .AddJsonFile(configPath, true, true)
   .AddEnvironmentVariables();
-builder.Services.Configure<ProcessingOptions>(builder.Configuration.GetSection("Processing"));
 builder.Services.Configure<GeneralOptions>(builder.Configuration.GetSection("General"));
 // Register your video processing service as a Singleton
 builder.Services.AddSingleton<LanguageService>();
+builder.Services.AddSingleton<YouTubeTMDbMapperService>();
 builder.Services.AddSingleton<VideoProcessingService>();
 builder.Services.AddHostedService<VideoProcessingBackgroundService>();
 var app = builder.Build();
@@ -67,14 +67,5 @@ app.MapGet("api/config/general", (ILogger<Program> logger, IOptions<GeneralOptio
   .WithName("GetGeneralConfig")
   .WithTags("Configuration")
   .Produces<GeneralOptions>(StatusCodes.Status200OK);
-
-app.MapGet("api/config/processing", (ILogger<Program> logger, IOptions<ProcessingOptions> options) =>
-  {
-    logger.LogInformation("GET /api/config/processing endpoint called.");
-    return Results.Ok(options.Value);
-  })
-  .WithName("GetProcessingConfig")
-  .WithTags("Configuration")
-  .Produces<ProcessingOptions>(StatusCodes.Status200OK);
 
 app.Run();

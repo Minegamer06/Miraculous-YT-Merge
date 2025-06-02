@@ -18,8 +18,8 @@ namespace MiraculousYouTubeMerger.Services
   {
     private readonly ILogger<VideoProcessingService> _logger;
     private readonly GeneralOptions _generalOptions;
-    private readonly ProcessingOptions _processingOptions;
     private readonly LanguageService _languageService;
+    private readonly YouTubeTMDbMapperService _youTubeTMDbMapperService;
     private static readonly SemaphoreSlim _processingSemaphore = new(1, 1);
 
     public ProcessingStatus Status { get; private set; } = ProcessingStatus.Idle;
@@ -30,12 +30,13 @@ namespace MiraculousYouTubeMerger.Services
     public VideoProcessingService(
       ILogger<VideoProcessingService> logger,
       IOptions<GeneralOptions> generalOptions,
-      IOptions<ProcessingOptions> processingOptions, LanguageService languageService)
+      LanguageService languageService, 
+      YouTubeTMDbMapperService youTubeTmDbMapperService)
     {
       _logger = logger;
       _languageService = languageService;
+      _youTubeTMDbMapperService = youTubeTmDbMapperService;
       _generalOptions = generalOptions.Value;
-      _processingOptions = processingOptions.Value;
     }
 
     public async Task<bool> StartProcessingAsync()
@@ -93,8 +94,10 @@ namespace MiraculousYouTubeMerger.Services
     private async Task ProcessVideosInternal(ShowTask task)
     {
       var episodes = GetEpisodes(task);
+      if (task.TmdbId != 0)
+        await _youTubeTMDbMapperService.Map(episodes, task.TmdbId);
       _logger.LogInformation("Found {Count} unique episode(s) to process.", episodes.Count);
-
+      
       if (episodes.Count == 0)
       {
         _logger.LogInformation("No episodes found to process based on current configuration and source files.");
@@ -154,13 +157,15 @@ namespace MiraculousYouTubeMerger.Services
       _logger.LogInformation("Finished processing all episodes.");
     }
     
-    private Episode? GetEpisodeInfoByName(string name)
+    private Episode? GetEpisodeInfoByName(string name, ShowTask task)
     {
       // Manual Mapping
-      foreach (var map in _processingOptions.ManuelMapping)
+      foreach (var map in task.ManuelMapping)
       {
+        string nameWithoutExtension = Path.GetFileNameWithoutExtension(name);
         bool titleMatch = !string.IsNullOrEmpty(map.Title) &&
-                          name.Equals(map.Title, StringComparison.InvariantCultureIgnoreCase);
+                          name.Equals(map.Title, StringComparison.InvariantCultureIgnoreCase) ||
+                          nameWithoutExtension.Equals(map.Title, StringComparison.InvariantCultureIgnoreCase);
         // In ManuelMapping, 'Path' is used as a distinctive part of the filename to match, not the full path.
         bool pathKeywordMatch = !string.IsNullOrEmpty(map.Path) &&
                                 name.Contains(map.Path, StringComparison.InvariantCultureIgnoreCase);
@@ -182,19 +187,18 @@ namespace MiraculousYouTubeMerger.Services
 
           return new Episode
           {
-            Title = !string.IsNullOrEmpty(map.Title)
-              ? map.Title
-              : "Manually Mapped Episode", // Provide a default if title is null
-            Season = map.Season,
-            EpisodeNumber = map.EpisodeNumber,
-            Language = lang, // Path will be set when file is found
-            Path = string.Empty // Placeholder, will be set later
+            Title = map.NewTitle,
+            Season = map.Season ?? -1,
+            EpisodeNumber = map.EpisodeNumber ?? -1,
+            Language = lang,
+            Path = string.Empty,
+            ManualMapping = map
           };
         }
       }
 
       // Regex Mapping
-      foreach (var pattern in _processingOptions.RegexMapping)
+      foreach (var pattern in task.RegexMapping)
       {
         var match = Regex.Match(name, pattern);
         if (match.Success)
@@ -229,11 +233,11 @@ namespace MiraculousYouTubeMerger.Services
 
         foreach (var file in folder.EnumerateFiles())
         {
-          if (!_processingOptions.AllowedExtensions.Contains(Path.GetExtension(file.Name).TrimStart('.'),
+          if (!_generalOptions.AllowedExtensions.Contains(Path.GetExtension(file.Name).TrimStart('.'),
                 StringComparer.OrdinalIgnoreCase))
             continue;
 
-          var episodeDetails = GetEpisodeInfoByName(file.Name);
+          var episodeDetails = GetEpisodeInfoByName(file.Name, task);
           if (episodeDetails == null)
           {
             _logger.LogDebug("No episode pattern matched for file {file}", file.Name); // Changed to Debug
@@ -286,16 +290,26 @@ namespace MiraculousYouTubeMerger.Services
           });
       }
 
-      videos = videos.OrderBy(x => x.FrameCount).ThenBy(x => x.Duration).ToList();
+      videos = videos.OrderBy(x => x.OutputFrameCount).ThenBy(x => x.OutputDuration).ToList();
       for (var i = 0; i < videos.Count; i++)
         videos[i].Index = i;
 
       var mainVideo = videos.First();
       foreach (var video in videos.Skip(1))
       {
-        double frameDelta = Math.Abs(mainVideo.FrameCount - video.FrameCount);
-        double durationDelta = Math.Abs((video.Duration - mainVideo.Duration).TotalSeconds);
-        if (durationDelta < 0.5)
+        double frameDelta = Math.Abs(mainVideo.OutputFrameCount - video.OutputFrameCount);
+        double durationDelta = Math.Abs((video.OutputDuration - mainVideo.OutputDuration).TotalSeconds);
+        if (video.Episode.ManualMapping is not null)
+        {
+          var manualMap = video.Episode.ManualMapping!;
+          _logger.LogInformation("Video '{Video}' hat eine manuelle Anpassung von {RemoveFrames} Frames.",
+            video.Episode.Title, manualMap.RemoveFrames);
+          video.StartFrameCutCount = manualMap.RemoveFrames;
+          if (manualMap.PatchOutro) // StartFrameCutCount muss davor gesetzt werden, damit es richtig berechnet wird.
+            video.SetFrameIgnore(mainVideo, manualMap.RemoveFrames, manualMap.SpeedMultiplier);
+          
+        }
+        else if (durationDelta < 0.5)
         {
           _logger.LogDebug("Videos scheinen synchron zu sein: {MainVideo} vs {Video}, auch ohne FPS-Anpassung.",
             mainVideo.Episode.Title, video.Episode.Title);
@@ -305,23 +319,23 @@ namespace MiraculousYouTubeMerger.Services
           _logger.LogWarning(
             "Frame count mismatch for {MainVideo} vs {Video}, aber nur {FrameDelta} Frames Unterschied.",
             mainVideo.Episode.Title, video.Episode.Title, frameDelta);
-          _logger.LogWarning("Warscheinlich hat Video '{Video}' das Intro enthalten",
-            Path.GetFileName(video.FrameCount > mainVideo.FrameCount
+          _logger.LogWarning("Wahrscheinlich hat Video '{Video}' das Intro enthalten",
+            Path.GetFileName(video.OutputFrameCount > mainVideo.OutputFrameCount
               ? video.Episode.Path
               : mainVideo.Episode.Path));
           _logger.LogWarning("Video '{Video}' muss angepasst werden.",
-            Path.GetFileName(video.FrameCount > mainVideo.FrameCount
+            Path.GetFileName(video.OutputFrameCount > mainVideo.OutputFrameCount
               ? "Aktuelles Video"
               : "Hauptvideo"));
-          if (video.FrameCount > mainVideo.FrameCount)
+          if (video.OutputFrameCount > mainVideo.OutputFrameCount)
           {
-            video.FrameRemove = frameDelta;
+            video.StartFrameCutCount = frameDelta;
             _logger.LogDebug(
               "Gute Nachricht, das Intro kann Problemlos entfernt werden, da das Hauptvideo kürzer ist.");
           }
           else if (episodeFiles.Count < 3)
           {
-            mainVideo.FrameRemove = frameDelta;
+            mainVideo.StartFrameCutCount = frameDelta;
             // Extensions.WriteSuccessLine("Gute Nachricht, das Intro kann Problemlos entfernt werden, da es nur 2 Videos gibt.");
             _logger.LogError(
               "Leider kann das Hauptvideo nicht angepasst werden, da es momentan noch nicht unterstützt wird.");
@@ -335,7 +349,7 @@ namespace MiraculousYouTubeMerger.Services
             return;
           }
         }
-        else if (video.FrameCount > mainVideo.FrameCount + 10 || video.FrameCount < mainVideo.FrameCount - 10)
+        else if (video.OutputFrameCount > mainVideo.OutputFrameCount + 10 || video.OutputFrameCount < mainVideo.OutputFrameCount - 10)
         {
           _logger.LogError(
             "Die Videos '{mainVideo}' und '{currentVideo}' (S {season}, E {episode}) scheinen nicht synchron zu sein, und können nicht zusammengeführt werden." +
@@ -345,13 +359,17 @@ namespace MiraculousYouTubeMerger.Services
           return;
         }
       }
-
-
+      
       var args = FFMpegArguments
         .FromFileInput(mainVideo.Episode.Path);
       foreach (var e in videos.Skip(1))
       {
-        args.AddFileInput(e.Episode.Path);
+        args.AddFileInput(e.Episode.Path, true, args =>
+        {
+          args.Seek(e.StartCutDuration)
+            .EndSeek(e.DurationToEnd);
+        });
+        
       }
 
       await args.OutputToFile(targetPath, true, opts =>
@@ -360,26 +378,18 @@ namespace MiraculousYouTubeMerger.Services
         for (var i = 0; i < videos.Count; i++)
         {
           var e = videos[i];
-          var diff = Math.Abs((e.Duration - mainVideo.Duration).TotalSeconds);
-          var aTempo = (e.Duration.TotalSeconds / mainVideo.Duration.TotalSeconds);
-          var secondsToSkip = e.FrameRemove / e.Analysis.VideoStreams.First().FrameRate;
-          string filterStart = $"[{i}:a]";
-          string filterEnd = $"[a{i}]";
-          List<string> filterCurrent = [];
-          if (secondsToSkip > 0)
+          var diff = e.GetDurationDiff(mainVideo).TotalSeconds;
+          var aTempo = e.GetSpeedMultiplier(mainVideo);
+          // FilterBuilder initialisieren
+          var fb = new FilterBuilder(i);
+          if (diff > 0.1)
           {
-            filterCurrent.Add($"atrim=start={secondsToSkip.ToString(CultureInfo.InvariantCulture)}");
-            filterCurrent.Add("asetpts=PTS-STARTPTS");
+            fb.AddFilter($"atempo={aTempo.ToString(CultureInfo.InvariantCulture)}");
           }
 
-          if (diff > 0.5)
-          {
-            // Label für jede gefilterte Spur erzeugen
-            filterCurrent.Add($"atempo={aTempo.ToString(CultureInfo.InvariantCulture)}");
-          }
-
-          if (filterCurrent.Count > 0)
-            filterSpecs.Add($"{filterStart}{string.Join(",", filterCurrent)}{filterEnd}");
+          var filter = fb.Build();
+          if (!string.IsNullOrEmpty(filter))
+            filterSpecs.Add(filter);
         }
 
         var filterComplex = string.Join(";", filterSpecs);
@@ -389,7 +399,7 @@ namespace MiraculousYouTubeMerger.Services
         opts.WithCustomArgument("-map 0:v:0");
         foreach (var e in videos)
         {
-          var diff = Math.Abs((e.Duration - mainVideo.Duration).TotalSeconds);
+          var diff = Math.Abs((e.OutputDuration - mainVideo.OutputDuration).TotalSeconds);
           if (diff > 0.5)
             opts.WithCustomArgument($"-map [a{e.Index}]");
           else
@@ -399,8 +409,8 @@ namespace MiraculousYouTubeMerger.Services
         opts.WithVideoCodec("copy"); // Video 1:1 kopieren
         foreach (var e in videos)
         {
-          var difference = Math.Abs((e.Duration - mainVideo.Duration).TotalSeconds);
-          opts.WithCustomArgument(difference <= 0.5
+          var difference = e.GetDurationDiff(mainVideo).TotalSeconds;
+          opts.WithCustomArgument(difference <= 0.1
             ? $"-c:a:{e.Index} copy"
             : $"-c:a:{e.Index} aac");
         }
@@ -422,6 +432,64 @@ namespace MiraculousYouTubeMerger.Services
       }).ProcessAsynchronously();
 
       _logger.LogInformation("✅ Datei erstellt: {targetPath}", targetPath);
+    }
+  }
+  /// <summary>
+  /// Baut FFmpeg-Audio-Filter-Complex-Strings mit automatischer Label-Verwaltung.
+  /// Du initialisierst ihn mit dem Stream-Index (0, 1, ...), und rufst AddFilter für jeden Rohfilter auf.
+  /// Beim Build bekommst du den vollständigen String inklusive korrekter Labels (z.B. "[a0]").
+  /// </summary>
+  public class FilterBuilder
+  {
+    private readonly int _streamIndex;
+    private readonly List<string> _filters = new();
+
+    /// <summary>
+    /// Der finale Label-Name, den FFmpeg zum Mapping erwartet, z.B. "[a0]".
+    /// </summary>
+    public string FinalLabel => $"[a{_streamIndex}]";
+
+    public FilterBuilder(int streamIndex)
+    {
+      _streamIndex = streamIndex;
+    }
+
+    /// <summary>
+    /// Fügt einen Rohfilter hinzu, z.B. "atrim=start=5" oder "atempo=1.02".
+    /// </summary>
+    public FilterBuilder AddFilter(string? rawFilter)
+    {
+      if (!string.IsNullOrEmpty(rawFilter))
+        _filters.Add(rawFilter);
+      return this;
+    }
+
+    /// <summary>
+    /// Baut den vollständigen -filter_complex-String inklusive Labels auf.
+    /// Beispiel für zwei Filter bei Stream 0:
+    /// [0:a]atrim=start=5[step0_1];[step0_1]atrim=end=30[a0]
+    /// </summary>
+    public string Build()
+    {
+      if (!_filters.Any())
+        return string.Empty;
+
+      var specs = new List<string>();
+      // jeder Schritt bekommt ein Label step{index}_{step}
+      for (int i = 0; i < _filters.Count; i++)
+      {
+        string fromLabel = i == 0
+          ? $"[{_streamIndex}:a]"
+          : $"[step{_streamIndex}_{i}]";
+
+        string toLabel = i == _filters.Count - 1
+          ? FinalLabel
+          : $"[step{_streamIndex}_{i + 1}]";
+
+        specs.Add($"{fromLabel}{_filters[i]}{toLabel}");
+      }
+
+      return string.Join(";", specs);
     }
   }
 }

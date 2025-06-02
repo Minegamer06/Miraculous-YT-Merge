@@ -9,4 +9,5 @@ public class Episode
   public int Season { get; set; }
   public int EpisodeNumber { get; set; }
   public CultureInfo? Language { get; set; }
+  public EpisodeDefinition? ManualMapping { get; set; }
 }

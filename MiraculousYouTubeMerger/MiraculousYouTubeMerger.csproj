@@ -9,8 +9,10 @@
 
     <ItemGroup>
         <PackageReference Include="FFMpegCore" Version="5.2.0" />
+        <PackageReference Include="FuzzySharp" Version="2.0.2" />
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.16"/>
         <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2"/>
+        <PackageReference Include="TMDbLib" Version="2.2.0" />
     </ItemGroup>
 
     <ItemGroup>
