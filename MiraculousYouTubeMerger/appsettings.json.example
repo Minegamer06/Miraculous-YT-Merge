@@ -1,0 +1,47 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "General": {
+    "AllowedExtensions": [ "mkv", "mp4", "webm" ],
+    "Language": "deu",
+    "TMDbApiKey": "-",
+    "Tasks": [
+      {
+        "Title": "Miraculous Serie",
+        "Description": "Task für Miraculous Videos",
+        "TmdbId": 65334,
+        "SourcePath": "/mnt/Source/Miraculous",
+        "TargetPath": "/mnt/Target/Miraculous",
+        "ManuelMapping": [
+          {
+            "NewTitle": "The Mime",
+            "Path": "THE MIME",
+            "Season": 1,
+            "EpisodeNumber": 19,
+            "RemoveFrames": 720 ,
+            "PatchOutro": true,
+            "SpeedMultiplier": 1.041666666666667
+          },
+          {
+            "NewTitle": "Princess Fragrance",
+            "Path": "PRINCESS FRAGRANCE",
+            "Season": 1,
+            "EpisodeNumber": 4,
+            "RemoveFrames": 720,
+            "PatchOutro": true,
+            "SpeedMultiplier": 1.041666666666667
+          }
+        ],
+        "RegexMapping": [
+          ".+🐞 (?<name>.+?) 🐾.*?(Staffel|Season) (?<season>\\d+).*?(Episode|Folge) (?<episode>\\d+)",
+          ".+🐞 (?<name>.+?) 🐾.*?(?<season>\\d+).*?(?<episode>\\d+)"
+        ]
+      }
+    ]
+  }
+}
