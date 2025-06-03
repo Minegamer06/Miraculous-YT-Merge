@@ -4,6 +4,8 @@
     build:
       context: .
       dockerfile: MiraculousYouTubeMerger/Dockerfile
+    ports:
+      - "8080:8080"
     environment:
       GENERAL__LANGUAGE: "deu"
       GENERAL__TMDBAPIKEY: "your_api_key_here"

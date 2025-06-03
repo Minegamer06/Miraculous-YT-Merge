@@ -3,7 +3,7 @@ using MiraculousYouTubeMerger;
 using MiraculousYouTubeMerger.Services;
 
 var builder = WebApplication.CreateBuilder(args);
-const string configPath = "/app/appsettings.json";
+const string configPath = "/mnt/config/appsettings.json";
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -23,6 +23,8 @@ if (app.Environment.IsDevelopment() || true) // For now, always enable Swagger
 {
   app.UseSwagger();
   app.UseSwaggerUI();
+  app.Logger.LogInformation("Swagger UI started at {swaggerPath}",
+    app.Configuration.GetValue<string>("Swagger:Endpoint") ?? "/swagger/index.html");
 }
 
 // Endpunkt-spezifischer Logger wird direkt injiziert

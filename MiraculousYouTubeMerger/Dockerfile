@@ -1,10 +1,11 @@
 ﻿FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+# Update-Paketliste und ffmpeg installieren
+RUN apt-get update && apt-get install -y ffmpeg
 USER $APP_UID
 WORKDIR /app
 EXPOSE 8080
 EXPOSE 8081
-# Set the environment variable for the app
-ENV GENERAL__LANGUAGE="deu"
+# Setze die Umgebungsvariablen
 ENV GENERAL__TMDBAPIKEY=""
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
