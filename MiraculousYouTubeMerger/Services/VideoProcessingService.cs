@@ -325,7 +325,7 @@ namespace MiraculousYouTubeMerger.Services
                         .PatchOutro) // StartFrameCutCount muss davor gesetzt werden, damit es richtig berechnet wird.
                         video.SetFrameIgnore(mainVideo, manualMap.RemoveFrames, manualMap.SpeedMultiplier);
                 }
-                else if (durationDelta < 1) // One second difference - probably the best we can do; treat as synced
+                else if (durationDelta < 2) // 2 second difference - probably the best we can do; treat as synced
                 {
                     _logger.LogDebug(
                         "Videos scheinen synchron zu sein: {MainVideo} vs {Video}, auch ohne FPS-Anpassung.",
