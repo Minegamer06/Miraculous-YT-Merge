@@ -34,7 +34,7 @@ public class YouTubeTMDbMapperService
     var show = await _tmdbClient.GetTvShowAsync(tmdbId);
     if (show is null)
       throw new InvalidOperationException($"Show with TMDb ID {tmdbId} not found.");
-    _logger.LogInformation("Mapping episodes for show: {ShowName} (TMDb ID: {TmdbId})", show.Name, tmdbId);
+    _logger.LogDebug("Mapping episodes for show: {ShowName} (TMDb ID: {TmdbId})", show.Name, tmdbId);
 
     foreach (var season in show.Seasons)
     {
