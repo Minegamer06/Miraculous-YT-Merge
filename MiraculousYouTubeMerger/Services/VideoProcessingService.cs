@@ -58,8 +58,7 @@ namespace MiraculousYouTubeMerger.Services
                     // Wenn die Quelle nicht existiert können wir die Verarbeitung überspringen
                     if (!Directory.Exists(task.SourcePath))
                     {
-                        _logger.LogWarning(
-                            $"Task {task.SourcePath} does not exist. Skipping processing for this task.");
+                        _logger.LogError("Task {SourcePath} does not exist. Skipping processing for this task.", task.SourcePath);
                         LastMessage = $"Task {task.SourcePath} does not exist. Skipping processing for this task.";
                         continue;
                     }
@@ -67,7 +66,7 @@ namespace MiraculousYouTubeMerger.Services
                     // Wenn das Zielverzeichnis nicht existiert, erstellen wir es
                     if (!Directory.Exists(task.TargetPath))
                     {
-                        _logger.LogInformation($"Target directory {task.TargetPath} does not exist. Creating it.");
+                        _logger.LogDebug("Target directory {TaskTargetPath} does not exist. Creating it.", task.TargetPath);
                         Directory.CreateDirectory(task.TargetPath);
                     }
 
@@ -76,7 +75,7 @@ namespace MiraculousYouTubeMerger.Services
 
                 Status = ProcessingStatus.Completed;
                 LastMessage = "Processing completed successfully.";
-                _logger.LogInformation("Video processing task finished.");
+                _logger.LogDebug("Video processing task finished.");
                 LastRunTime = DateTime.UtcNow;
                 return true;
             }
@@ -99,7 +98,7 @@ namespace MiraculousYouTubeMerger.Services
             var episodes = GetEpisodes(task);
             if (task.TmdbId != 0)
                 await _youTubeTMDbMapperService.Map(episodes, task.TmdbId);
-            _logger.LogInformation("Found {Count} unique episode(s) to process.", episodes.Count);
+            _logger.LogDebug("Found {Count} unique episode(s) to process.", episodes.Count);
 
             if (episodes.Count == 0)
             {
@@ -128,7 +127,7 @@ namespace MiraculousYouTubeMerger.Services
             {
                 progress++;
                 var episodeKey = episodeEntry.Key;
-                _logger.LogInformation(
+                _logger.LogDebug(
                     "[{progress}/{count}] Processing {Title} (Season {Season}, Episode {EpisodeNumber})...",
                     progress, orderedEpisodes.Count, episodeKey.Title, episodeKey.Season, episodeKey.EpisodeNumber);
 
@@ -152,7 +151,7 @@ namespace MiraculousYouTubeMerger.Services
 
                 if (File.Exists(targetFile))
                 {
-                    _logger.LogInformation("File already exists, skipping: {targetFile}", targetFile);
+                    _logger.LogDebug("File already exists, skipping: {targetFile}", targetFile);
                     continue;
                 }
 
@@ -168,7 +167,7 @@ namespace MiraculousYouTubeMerger.Services
                 }
             }
 
-            _logger.LogInformation("Finished processing all episodes.");
+            _logger.LogDebug("Finished processing all episodes.");
         }
 
         private Episode? GetEpisodeInfoByName(string name, ShowTask task)
@@ -334,14 +333,14 @@ namespace MiraculousYouTubeMerger.Services
                 }
                 else if (Math.Abs(frameDelta - 720) < 2)
                 {
-                    _logger.LogWarning(
+                    _logger.LogDebug(
                         "Frame count mismatch for {MainVideo} vs {Video}, aber nur {FrameDelta} Frames Unterschied.",
                         mainVideo.Episode.Title, video.Episode.Title, frameDelta);
-                    _logger.LogWarning("Wahrscheinlich hat Video '{Video}' das Intro enthalten",
+                    _logger.LogDebug("Wahrscheinlich hat Video '{Video}' das Intro enthalten",
                         Path.GetFileName(video.OutputFrameCount > mainVideo.OutputFrameCount
                             ? video.Episode.Path
                             : mainVideo.Episode.Path));
-                    _logger.LogWarning("Video '{Video}' muss angepasst werden.",
+                    _logger.LogDebug("Video '{Video}' muss angepasst werden.",
                         Path.GetFileName(video.OutputFrameCount > mainVideo.OutputFrameCount
                             ? "Aktuelles Video"
                             : "Hauptvideo"));
@@ -354,7 +353,6 @@ namespace MiraculousYouTubeMerger.Services
                     else if (episodeFiles.Count < 3)
                     {
                         mainVideo.StartFrameCutCount = frameDelta;
-                        // Extensions.WriteSuccessLine("Gute Nachricht, das Intro kann Problemlos entfernt werden, da es nur 2 Videos gibt.");
                         _logger.LogError(
                             "Leider kann das Hauptvideo nicht angepasst werden, da es momentan noch nicht unterstützt wird.");
                         return;
@@ -436,6 +434,7 @@ namespace MiraculousYouTubeMerger.Services
 
                 foreach (var e in videos)
                 {
+                    // Remove Default Flag
                     opts.WithCustomArgument($"-disposition:a:{e.Index} -default");
                 }
 
@@ -451,7 +450,7 @@ namespace MiraculousYouTubeMerger.Services
                 }
             }).ProcessAsynchronously();
 
-            _logger.LogInformation("✅ Datei erstellt: {targetPath}", targetPath);
+            _logger.LogDebug("✅ Datei erstellt: {targetPath}", targetPath);
         }
     }
 
