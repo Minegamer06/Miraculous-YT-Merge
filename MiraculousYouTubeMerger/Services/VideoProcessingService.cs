@@ -75,7 +75,7 @@ namespace MiraculousYouTubeMerger.Services
 
                 Status = ProcessingStatus.Completed;
                 LastMessage = "Processing completed successfully.";
-                _logger.LogDebug("Video processing task finished.");
+                _logger.LogInformation("Video processing task finished.");
                 LastRunTime = DateTime.UtcNow;
                 return true;
             }
@@ -325,13 +325,13 @@ namespace MiraculousYouTubeMerger.Services
                         .PatchOutro) // StartFrameCutCount muss davor gesetzt werden, damit es richtig berechnet wird.
                         video.SetFrameIgnore(mainVideo, manualMap.RemoveFrames, manualMap.SpeedMultiplier);
                 }
-                else if (durationDelta < 0.5)
+                else if (durationDelta < 1) // One second difference - probably the best we can do; treat as synced
                 {
                     _logger.LogDebug(
                         "Videos scheinen synchron zu sein: {MainVideo} vs {Video}, auch ohne FPS-Anpassung.",
                         mainVideo.Episode.Title, video.Episode.Title);
                 }
-                else if (Math.Abs(frameDelta - 720) < 2)
+                else if (Math.Abs(frameDelta - 720) < 5)
                 {
                     _logger.LogDebug(
                         "Frame count mismatch for {MainVideo} vs {Video}, aber nur {FrameDelta} Frames Unterschied.",
@@ -370,10 +370,11 @@ namespace MiraculousYouTubeMerger.Services
                 {
                     _logger.LogError(
                         "Die Videos '{mainVideo}' und '{currentVideo}' (S {season}, E {episode}) scheinen nicht synchron zu sein, und können nicht zusammengeführt werden." +
-                        "\n Die Differenz beträgt {frameDelta} Frames, das sind ca. {durationDelta} Sekunden.",
+                        "\n Die Differenz beträgt {frameDelta} Frames, das sind ca. {durationDelta} Sekunden." +
+                        "\n MainVideo: {mainVideoDuration}, Video: {videoDuration}",
                         mainVideo.Episode.Title, video.Episode.Title, video.Episode.Season, video.Episode.EpisodeNumber,
                         frameDelta,
-                        (frameDelta / mainVideo.Analysis.VideoStreams[0].FrameRate));
+                        (frameDelta / mainVideo.Analysis.VideoStreams[0].FrameRate), mainVideo.SourceDuration, video.SourceDuration);
                     return;
                 }
             }
